@@ -4,12 +4,14 @@ import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Entity
 @Table(name = "users")
-@Data // This is Lombok: it creates all getters/setters automatically
+@Data
 @NoArgsConstructor
 @AllArgsConstructor
 public class User {
@@ -38,6 +40,27 @@ public class User {
     private String idS3BackKey;
 
     private boolean isActive = true;
+
+    // ==========================================
+    // SHARPPAY V2: STEP-UP SECURITY FEATURES
+    // ==========================================
+
+    @Column(name = "transaction_pin")
+    private String transactionPin;
+
+    @Column(name = "liveness_transfer_limit")
+    private BigDecimal livenessTransferLimit;
+
+    @Column(name = "trusted_device_id")
+    private String trustedDeviceId;
+
+    @Column(name = "selfie_s3_key")
+    private String selfieS3Key;
+
+    @Column(name = "liveness_verified_at")
+    private LocalDateTime livenessVerifiedAt;
+
+    // ==========================================
 
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

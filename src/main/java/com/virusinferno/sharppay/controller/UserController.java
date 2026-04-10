@@ -4,6 +4,7 @@ import com.virusinferno.sharppay.dto.LoginRequest;
 import com.virusinferno.sharppay.dto.LoginResponse;
 import com.virusinferno.sharppay.dto.UserProfileResponse;
 import com.virusinferno.sharppay.dto.UserRegistrationRequest;
+import com.virusinferno.sharppay.dto.UserSettingsRequest;
 import com.virusinferno.sharppay.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -30,11 +31,19 @@ public class UserController {
         return ResponseEntity.ok(response);
     }
 
-    // NEW: Dashboard Endpoint
     @GetMapping("/me")
     public ResponseEntity<UserProfileResponse> getMyProfile(Principal principal) {
-        // 'principal.getName()' automatically contains the email from the JWT token!
         UserProfileResponse profile = userService.getUserProfile(principal.getName());
         return ResponseEntity.ok(profile);
+    }
+
+    // ==========================================
+    // SHARPPAY V2: SETTINGS ENDPOINT
+    // ==========================================
+    @PostMapping("/settings")
+    public ResponseEntity<String> updateSettings(@RequestBody UserSettingsRequest request, Principal principal) {
+        // Securely identify the user via their JWT
+        String result = userService.updateSecuritySettings(principal.getName(), request);
+        return ResponseEntity.ok(result);
     }
 }

@@ -16,6 +16,7 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 import java.io.IOException;
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Service
@@ -29,31 +30,26 @@ public class KycService {
     @Value("${aws.s3.bucket-name}")
     private String bucketName;
 
+    // 1. THE ORIGINAL ONBOARDING
     public String processKyc(String email, MultipartFile idCard, MultipartFile selfie) {
-        // 1. Verify the user exists securely via their JWT email
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("User not found!"));
+        User user = userRepository.findByEmail(email).orElseThrow(() -> new RuntimeException("User not found!"));
 
-        // Check if they are already verified
         if ("VERIFIED".equals(user.getKycStatus())) {
             throw new RuntimeException("User is already KYC Verified!");
         }
 
         try {
-            // 2. Generate unique file names for S3 so images don't overwrite each other
             String idCardKey = "kyc-docs/" + user.getId() + "/id_card_" + UUID.randomUUID() + ".jpg";
             String selfieKey = "kyc-docs/" + user.getId() + "/selfie_" + UUID.randomUUID() + ".jpg";
 
-            // 3. Upload both files securely to your AWS S3 Bucket
             uploadToS3(idCardKey, idCard);
             uploadToS3(selfieKey, selfie);
 
-            // 4. Ask AWS Rekognition AI to compare the two faces
             boolean isMatch = compareFacesInS3(idCardKey, selfieKey);
 
-            // 5. Update the Database based on the AI's decision
             if (isMatch) {
                 user.setKycStatus("VERIFIED");
+                user.setSelfieS3Key(selfieKey); // NEW: Save the baseline selfie key!
                 userRepository.save(user);
                 return "KYC Verification Successful! Identity confirmed.";
             } else {
@@ -61,7 +57,6 @@ public class KycService {
                 userRepository.save(user);
                 throw new RuntimeException("KYC Failed: Faces do not match!");
             }
-
         } catch (IOException e) {
             throw new RuntimeException("Failed to process image files: " + e.getMessage());
         } catch (Exception e) {
@@ -69,37 +64,45 @@ public class KycService {
         }
     }
 
+    // 2. THE NEW LIVENESS CHECK FOR HIGH-VALUE TRANSFERS
+    public String verifyLiveness(String email, MultipartFile freshSelfie) {
+        User user = userRepository.findByEmail(email).orElseThrow();
+
+        if (user.getSelfieS3Key() == null) {
+            throw new RuntimeException("You must complete full KYC onboarding before using liveness features.");
+        }
+
+        try {
+            // Upload the fresh selfie temporarily
+            String tempKey = "liveness-checks/" + user.getId() + "/fresh_selfie_" + UUID.randomUUID() + ".jpg";
+            uploadToS3(tempKey, freshSelfie);
+
+            // Ask AWS to compare the fresh selfie to their saved KYC selfie
+            boolean isMatch = compareFacesInS3(user.getSelfieS3Key(), tempKey);
+
+            if (isMatch) {
+                // Open the 5-minute trust window!
+                user.setLivenessVerifiedAt(LocalDateTime.now());
+                userRepository.save(user);
+                return "Liveness verified! You have 5 minutes to complete your high-value transfer.";
+            } else {
+                throw new RuntimeException("Biometric failed: Face does not match the account owner.");
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("Liveness check failed: " + e.getMessage());
+        }
+    }
+
     private void uploadToS3(String s3Key, MultipartFile file) throws IOException {
         PutObjectRequest putObjectRequest = PutObjectRequest.builder()
-                .bucket(bucketName)
-                .key(s3Key)
-                .contentType(file.getContentType())
-                .build();
-
+                .bucket(bucketName).key(s3Key).contentType(file.getContentType()).build();
         s3Client.putObject(putObjectRequest, RequestBody.fromInputStream(file.getInputStream(), file.getSize()));
     }
 
     private boolean compareFacesInS3(String sourceKey, String targetKey) {
-        // Point Rekognition to the ID Card in your bucket
-        Image sourceImage = Image.builder()
-                .s3Object(S3Object.builder().bucket(bucketName).name(sourceKey).build())
-                .build();
-
-        // Point Rekognition to the Selfie in your bucket
-        Image targetImage = Image.builder()
-                .s3Object(S3Object.builder().bucket(bucketName).name(targetKey).build())
-                .build();
-
-        // Build the AI request (We are asking for an 85% minimum similarity match)
-        CompareFacesRequest request = CompareFacesRequest.builder()
-                .sourceImage(sourceImage)
-                .targetImage(targetImage)
-                .similarityThreshold(85F)
-                .build();
-
-        CompareFacesResponse response = rekognitionClient.compareFaces(request);
-
-        // If the list of face matches is NOT empty, the AI found a match!
-        return !response.faceMatches().isEmpty();
+        Image sourceImage = Image.builder().s3Object(S3Object.builder().bucket(bucketName).name(sourceKey).build()).build();
+        Image targetImage = Image.builder().s3Object(S3Object.builder().bucket(bucketName).name(targetKey).build()).build();
+        CompareFacesRequest request = CompareFacesRequest.builder().sourceImage(sourceImage).targetImage(targetImage).similarityThreshold(85F).build();
+        return !rekognitionClient.compareFaces(request).faceMatches().isEmpty();
     }
 }

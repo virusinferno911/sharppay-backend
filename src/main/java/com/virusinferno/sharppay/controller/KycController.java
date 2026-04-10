@@ -21,9 +21,16 @@ public class KycController {
             @RequestParam("selfie") MultipartFile selfie,
             Principal principal) {
 
-        // The Principal object securely hands over the email extracted from the JWT Token!
         String result = kycService.processKyc(principal.getName(), idCard, selfie);
+        return ResponseEntity.ok(result);
+    }
 
+    @PostMapping("/liveness")
+    public ResponseEntity<String> verifyLiveness(
+            @RequestParam("liveSelfie") MultipartFile liveSelfie,
+            Principal principal) {
+
+        String result = kycService.verifyLiveness(principal.getName(), liveSelfie);
         return ResponseEntity.ok(result);
     }
 }
