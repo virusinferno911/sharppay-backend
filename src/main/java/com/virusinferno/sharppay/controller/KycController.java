@@ -17,11 +17,12 @@ public class KycController {
 
     @PostMapping("/verify")
     public ResponseEntity<String> verifyIdentity(
-            @RequestParam("idCard") MultipartFile idCard,
-            @RequestParam("selfie") MultipartFile selfie,
+            @RequestParam("idFront") MultipartFile idFront,
+            @RequestParam("idBack") MultipartFile idBack,
+            @RequestParam("liveSelfie") MultipartFile liveSelfie,
             Principal principal) {
 
-        String result = kycService.processKyc(principal.getName(), idCard, selfie);
+        String result = kycService.processKyc(principal.getName(), idFront, idBack, liveSelfie);
         return ResponseEntity.ok(result);
     }
 

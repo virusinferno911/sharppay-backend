@@ -6,15 +6,15 @@ import com.virusinferno.sharppay.model.User;
 import com.virusinferno.sharppay.repository.AccountRepository;
 import com.virusinferno.sharppay.repository.TransactionRepository;
 import com.virusinferno.sharppay.repository.UserRepository;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
+import software.amazon.awssdk.core.SdkBytes;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.rekognition.RekognitionClient;
-import software.amazon.awssdk.services.rekognition.model.CompareFacesRequest;
-import software.amazon.awssdk.services.rekognition.model.Image;
-import software.amazon.awssdk.services.rekognition.model.S3Object;
+import software.amazon.awssdk.services.rekognition.model.*;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
@@ -36,7 +36,21 @@ public class KycService {
     @Value("${aws.s3.bucket-name}")
     private String bucketName;
 
-    public String processKyc(String email, MultipartFile idCard, MultipartFile selfie) {
+    private final String FACE_COLLECTION_ID = "sharppay-users-collection";
+
+    // 1. AUTO-CREATE THE AWS FACE DATABASE ON STARTUP
+    @PostConstruct
+    public void initRekognitionCollection() {
+        try {
+            rekognitionClient.createCollection(CreateCollectionRequest.builder().collectionId(FACE_COLLECTION_ID).build());
+            System.out.println("AWS Rekognition Face Collection Created!");
+        } catch (ResourceAlreadyExistsException e) {
+            System.out.println("AWS Rekognition Face Collection already exists. Ready for KYC.");
+        }
+    }
+
+    // 2. THE NEW ENTERPRISE KYC FLOW
+    public String processKyc(String email, MultipartFile idFront, MultipartFile idBack, MultipartFile liveSelfie) {
         User user = userRepository.findByEmail(email).orElseThrow(() -> new RuntimeException("User not found!"));
 
         if ("VERIFIED".equals(user.getKycStatus())) {
@@ -44,82 +58,106 @@ public class KycService {
         }
 
         try {
-            String idCardKey = "kyc-docs/" + user.getId() + "/id_card_" + UUID.randomUUID() + ".jpg";
+            // A. Anti-Duplication Check: Does this face already exist in our bank?
+            SdkBytes selfieBytes = SdkBytes.fromInputStream(liveSelfie.getInputStream());
+            SearchFacesByImageRequest searchReq = SearchFacesByImageRequest.builder()
+                    .collectionId(FACE_COLLECTION_ID)
+                    .image(Image.builder().bytes(selfieBytes).build())
+                    .faceMatchThreshold(90F) // 90% confidence
+                    .maxFaces(1)
+                    .build();
+
+            try {
+                SearchFacesByImageResponse searchRes = rekognitionClient.searchFacesByImage(searchReq);
+                if (!searchRes.faceMatches().isEmpty()) {
+                    throw new RuntimeException("KYC Rejected: An account with this facial identity already exists in our system.");
+                }
+            } catch (InvalidParameterException e) {
+                // If there are no faces in the collection yet, AWS throws this. We can ignore it for the first user.
+            }
+
+            // B. Upload all 3 documents to S3
+            String idFrontKey = "kyc-docs/" + user.getId() + "/id_front_" + UUID.randomUUID() + ".jpg";
+            String idBackKey = "kyc-docs/" + user.getId() + "/id_back_" + UUID.randomUUID() + ".jpg";
             String selfieKey = "kyc-docs/" + user.getId() + "/selfie_" + UUID.randomUUID() + ".jpg";
 
-            uploadToS3(idCardKey, idCard);
-            uploadToS3(selfieKey, selfie);
+            uploadToS3(idFrontKey, idFront);
+            uploadToS3(idBackKey, idBack);
+            uploadToS3(selfieKey, liveSelfie);
 
-            boolean isMatch = compareFacesInS3(idCardKey, selfieKey);
+            // C. Compare the Live Selfie to the ID Card Front
+            boolean isMatch = compareFacesInS3(idFrontKey, selfieKey);
 
             if (isMatch) {
+                // D. Index the verified face into our AWS Database to prevent future duplicates!
+                IndexFacesRequest indexReq = IndexFacesRequest.builder()
+                        .collectionId(FACE_COLLECTION_ID)
+                        .image(Image.builder().s3Object(S3Object.builder().bucket(bucketName).name(selfieKey).build()).build())
+                        .externalImageId(user.getId().toString().replace("-", "")) // Link face to this exact User ID
+                        .build();
+                rekognitionClient.indexFaces(indexReq);
+
+                // E. Save and Reward
                 user.setKycStatus("VERIFIED");
+                user.setIdS3FrontKey(idFrontKey);
+                user.setIdS3BackKey(idBackKey);
                 user.setSelfieS3Key(selfieKey);
                 userRepository.save(user);
 
-                // ==========================================
-                // THE ₦50,000 WELCOME BONUS INJECTION
-                // ==========================================
-                Account userAccount = accountRepository.findByUser(user)
-                        .orElseThrow(() -> new RuntimeException("Account not found"));
+                injectWelcomeBonus(user);
 
-                BigDecimal bonusAmount = new BigDecimal("50000.00");
-                userAccount.setBalance(userAccount.getBalance().add(bonusAmount));
-                accountRepository.save(userAccount);
-
-                Transaction bonusTx = new Transaction();
-                bonusTx.setTransactionId("BONUS-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase());
-                bonusTx.setSessionId("SES-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase());
-                bonusTx.setSenderAccount(null); // System Generated
-                bonusTx.setReceiverAccount(userAccount);
-                bonusTx.setAmount(bonusAmount);
-                bonusTx.setTransactionType("WELCOME_BONUS");
-                bonusTx.setStatus("COMPLETED");
-                bonusTx.setDescription("SharpPay ₦50,000 KYC Welcome Bonus!");
-                transactionRepository.save(bonusTx);
-                // ==========================================
-
-                return "KYC Verification Successful! ₦50,000 Welcome Bonus has been credited to your wallet.";
+                return "KYC Verification Successful! Identity confirmed and ₦50,000 Welcome Bonus credited.";
             } else {
                 user.setKycStatus("FAILED");
                 userRepository.save(user);
-                throw new RuntimeException("KYC Failed: Faces do not match!");
+                throw new RuntimeException("KYC Failed: Live selfie does not match the provided ID card!");
             }
         } catch (IOException e) {
             throw new RuntimeException("Failed to process image files: " + e.getMessage());
-        } catch (Exception e) {
-            throw new RuntimeException("AWS Error: " + e.getMessage());
         }
     }
 
+    private void injectWelcomeBonus(User user) {
+        Account userAccount = accountRepository.findByUser(user)
+                .orElseThrow(() -> new RuntimeException("Account not found"));
+
+        BigDecimal bonusAmount = new BigDecimal("50000.00");
+        userAccount.setBalance(userAccount.getBalance().add(bonusAmount));
+        accountRepository.save(userAccount);
+
+        Transaction bonusTx = new Transaction();
+        bonusTx.setTransactionId("BONUS-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase());
+        bonusTx.setSenderAccount(null);
+        bonusTx.setReceiverAccount(userAccount);
+        bonusTx.setAmount(bonusAmount);
+        bonusTx.setTransactionType("WELCOME_BONUS");
+        bonusTx.setStatus("COMPLETED");
+        bonusTx.setDescription("SharpPay ₦50,000 KYC Welcome Bonus!");
+        transactionRepository.save(bonusTx);
+    }
+
+    // Keep your existing Liveness Transfer method here
     public String verifyLiveness(String email, MultipartFile freshSelfie) {
         User user = userRepository.findByEmail(email).orElseThrow();
-
-        if (user.getSelfieS3Key() == null) {
-            throw new RuntimeException("You must complete full KYC onboarding before using liveness features.");
-        }
+        if (user.getSelfieS3Key() == null) throw new RuntimeException("Complete KYC first.");
 
         try {
             String tempKey = "liveness-checks/" + user.getId() + "/fresh_selfie_" + UUID.randomUUID() + ".jpg";
             uploadToS3(tempKey, freshSelfie);
-
-            boolean isMatch = compareFacesInS3(user.getSelfieS3Key(), tempKey);
-
-            if (isMatch) {
+            if (compareFacesInS3(user.getSelfieS3Key(), tempKey)) {
                 user.setLivenessVerifiedAt(LocalDateTime.now());
                 userRepository.save(user);
-                return "Liveness verified! You have 5 minutes to complete your high-value transfer.";
+                return "Liveness verified! You have 5 minutes.";
             } else {
-                throw new RuntimeException("Biometric failed: Face does not match the account owner.");
+                throw new RuntimeException("Biometric failed: Face does not match account owner.");
             }
         } catch (Exception e) {
-            throw new RuntimeException("Liveness check failed: " + e.getMessage());
+            throw new RuntimeException("Liveness check failed.");
         }
     }
 
     private void uploadToS3(String s3Key, MultipartFile file) throws IOException {
-        PutObjectRequest putObjectRequest = PutObjectRequest.builder()
-                .bucket(bucketName).key(s3Key).contentType(file.getContentType()).build();
+        PutObjectRequest putObjectRequest = PutObjectRequest.builder().bucket(bucketName).key(s3Key).contentType(file.getContentType()).build();
         s3Client.putObject(putObjectRequest, RequestBody.fromInputStream(file.getInputStream(), file.getSize()));
     }
 
