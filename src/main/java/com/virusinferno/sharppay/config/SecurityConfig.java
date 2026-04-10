@@ -29,8 +29,8 @@ public class SecurityConfig {
         http
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
-                        // EXACT match: Only register and login are public now!
-                        .requestMatchers("/api/v1/auth/register", "/api/v1/auth/login").permitAll()
+                        // Added /verify-otp to the public whitelist!
+                        .requestMatchers("/api/v1/auth/register", "/api/v1/auth/login", "/api/v1/auth/verify-otp").permitAll()
                         // Everything else (including /auth/me) requires a valid token
                         .anyRequest().authenticated()
                 )

@@ -45,6 +45,9 @@ public class User {
     // EMAIL VERIFICATION ENGINE
     // ==========================================
     private String otpCode;
+
+    // FIX: Tells PostgreSQL to default existing users to 'false' to prevent crash
+    @Column(columnDefinition = "boolean default false", nullable = false)
     private boolean isEmailVerified = false;
 
     // ==========================================
