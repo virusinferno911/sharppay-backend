@@ -1,12 +1,11 @@
-name: Build and Publish Docker Image
+name: Build, Publish, and Deploy
 
-# This tells GitHub to run this script ONLY when you push to the 'main' branch
 on:
   push:
     branches: [ "main" ]
 
 jobs:
-  build-and-push:
+  build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
@@ -25,3 +24,15 @@ jobs:
           context: .
           push: true
           tags: ${{ secrets.DOCKER_USERNAME }}/sharppay-backend:latest
+
+      - name: Deploy to Contabo VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          # If using an SSH key instead of a password, uncomment the line below and delete the password line above
+          # key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            chmod +x /root/sharppay/deploy_sharppay.sh
+            /root/sharppay/deploy_sharppay.sh
