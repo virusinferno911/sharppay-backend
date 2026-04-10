@@ -42,6 +42,12 @@ public class User {
     private boolean isActive = true;
 
     // ==========================================
+    // EMAIL VERIFICATION ENGINE
+    // ==========================================
+    private String otpCode;
+    private boolean isEmailVerified = false;
+
+    // ==========================================
     // SHARPPAY V2: STEP-UP SECURITY FEATURES
     // ==========================================
 

@@ -11,6 +11,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.security.Principal;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/auth")
@@ -22,7 +23,13 @@ public class UserController {
     @PostMapping("/register")
     public ResponseEntity<String> registerUser(@RequestBody UserRegistrationRequest request) {
         userService.registerUser(request);
-        return ResponseEntity.ok("Welcome to Sharp-pay! User registered successfully.");
+        return ResponseEntity.ok("Registration successful! Please check your email for the OTP.");
+    }
+
+    @PostMapping("/verify-otp")
+    public ResponseEntity<String> verifyOtp(@RequestBody Map<String, String> request) {
+        String result = userService.verifyOtp(request.get("email"), request.get("otpCode"));
+        return ResponseEntity.ok(result);
     }
 
     @PostMapping("/login")
@@ -37,12 +44,8 @@ public class UserController {
         return ResponseEntity.ok(profile);
     }
 
-    // ==========================================
-    // SHARPPAY V2: SETTINGS ENDPOINT
-    // ==========================================
     @PostMapping("/settings")
     public ResponseEntity<String> updateSettings(@RequestBody UserSettingsRequest request, Principal principal) {
-        // Securely identify the user via their JWT
         String result = userService.updateSecuritySettings(principal.getName(), request);
         return ResponseEntity.ok(result);
     }

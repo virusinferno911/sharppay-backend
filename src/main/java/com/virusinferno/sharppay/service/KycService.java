@@ -1,6 +1,10 @@
 package com.virusinferno.sharppay.service;
 
+import com.virusinferno.sharppay.model.Account;
+import com.virusinferno.sharppay.model.Transaction;
 import com.virusinferno.sharppay.model.User;
+import com.virusinferno.sharppay.repository.AccountRepository;
+import com.virusinferno.sharppay.repository.TransactionRepository;
 import com.virusinferno.sharppay.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -9,13 +13,13 @@ import org.springframework.web.multipart.MultipartFile;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.rekognition.RekognitionClient;
 import software.amazon.awssdk.services.rekognition.model.CompareFacesRequest;
-import software.amazon.awssdk.services.rekognition.model.CompareFacesResponse;
 import software.amazon.awssdk.services.rekognition.model.Image;
 import software.amazon.awssdk.services.rekognition.model.S3Object;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -26,11 +30,12 @@ public class KycService {
     private final S3Client s3Client;
     private final RekognitionClient rekognitionClient;
     private final UserRepository userRepository;
+    private final AccountRepository accountRepository;
+    private final TransactionRepository transactionRepository;
 
     @Value("${aws.s3.bucket-name}")
     private String bucketName;
 
-    // 1. THE ORIGINAL ONBOARDING
     public String processKyc(String email, MultipartFile idCard, MultipartFile selfie) {
         User user = userRepository.findByEmail(email).orElseThrow(() -> new RuntimeException("User not found!"));
 
@@ -49,9 +54,32 @@ public class KycService {
 
             if (isMatch) {
                 user.setKycStatus("VERIFIED");
-                user.setSelfieS3Key(selfieKey); // NEW: Save the baseline selfie key!
+                user.setSelfieS3Key(selfieKey);
                 userRepository.save(user);
-                return "KYC Verification Successful! Identity confirmed.";
+
+                // ==========================================
+                // THE ₦50,000 WELCOME BONUS INJECTION
+                // ==========================================
+                Account userAccount = accountRepository.findByUser(user)
+                        .orElseThrow(() -> new RuntimeException("Account not found"));
+
+                BigDecimal bonusAmount = new BigDecimal("50000.00");
+                userAccount.setBalance(userAccount.getBalance().add(bonusAmount));
+                accountRepository.save(userAccount);
+
+                Transaction bonusTx = new Transaction();
+                bonusTx.setTransactionId("BONUS-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase());
+                bonusTx.setSessionId("SES-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase());
+                bonusTx.setSenderAccount(null); // System Generated
+                bonusTx.setReceiverAccount(userAccount);
+                bonusTx.setAmount(bonusAmount);
+                bonusTx.setTransactionType("WELCOME_BONUS");
+                bonusTx.setStatus("COMPLETED");
+                bonusTx.setDescription("SharpPay ₦50,000 KYC Welcome Bonus!");
+                transactionRepository.save(bonusTx);
+                // ==========================================
+
+                return "KYC Verification Successful! ₦50,000 Welcome Bonus has been credited to your wallet.";
             } else {
                 user.setKycStatus("FAILED");
                 userRepository.save(user);
@@ -64,7 +92,6 @@ public class KycService {
         }
     }
 
-    // 2. THE NEW LIVENESS CHECK FOR HIGH-VALUE TRANSFERS
     public String verifyLiveness(String email, MultipartFile freshSelfie) {
         User user = userRepository.findByEmail(email).orElseThrow();
 
@@ -73,15 +100,12 @@ public class KycService {
         }
 
         try {
-            // Upload the fresh selfie temporarily
             String tempKey = "liveness-checks/" + user.getId() + "/fresh_selfie_" + UUID.randomUUID() + ".jpg";
             uploadToS3(tempKey, freshSelfie);
 
-            // Ask AWS to compare the fresh selfie to their saved KYC selfie
             boolean isMatch = compareFacesInS3(user.getSelfieS3Key(), tempKey);
 
             if (isMatch) {
-                // Open the 5-minute trust window!
                 user.setLivenessVerifiedAt(LocalDateTime.now());
                 userRepository.save(user);
                 return "Liveness verified! You have 5 minutes to complete your high-value transfer.";

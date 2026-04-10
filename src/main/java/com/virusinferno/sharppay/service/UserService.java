@@ -26,6 +26,7 @@ public class UserService {
     private final AccountRepository accountRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final EmailService emailService;
 
     @Transactional
     public User registerUser(UserRegistrationRequest request) {
@@ -40,15 +41,35 @@ public class UserService {
         newUser.setPhoneNumber(request.getPhoneNumber());
         newUser.setPasswordHash(passwordEncoder.encode(request.getPassword()));
 
+        // Generate 6-digit OTP
+        String generatedOtp = String.format("%06d", new Random().nextInt(999999));
+        newUser.setOtpCode(generatedOtp);
+        newUser.setEmailVerified(false);
+
         User savedUser = userRepository.save(newUser);
 
         Account newAccount = new Account();
         newAccount.setUser(savedUser);
         newAccount.setAccountNumber(generateUniqueAccountNumber());
-
         accountRepository.save(newAccount);
 
+        // Fire the email asynchronously
+        emailService.sendOtpEmail(savedUser.getEmail(), generatedOtp);
+
         return savedUser;
+    }
+
+    public String verifyOtp(String email, String otpCode) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found!"));
+
+        if (user.getOtpCode() != null && user.getOtpCode().equals(otpCode)) {
+            user.setEmailVerified(true);
+            user.setOtpCode(null); // Clear it for security
+            userRepository.save(user);
+            return "Email verified successfully!";
+        }
+        throw new RuntimeException("Invalid OTP Code!");
     }
 
     public LoginResponse loginUser(LoginRequest request) {
@@ -59,8 +80,11 @@ public class UserService {
             throw new RuntimeException("Invalid email or password!");
         }
 
-        String token = jwtService.generateToken(user.getEmail());
+        if (!user.isEmailVerified()) {
+            throw new RuntimeException("Please verify your email via OTP before logging in.");
+        }
 
+        String token = jwtService.generateToken(user.getEmail());
         return new LoginResponse(token, "Login successful!");
     }
 
@@ -81,23 +105,17 @@ public class UserService {
                 .build();
     }
 
-    // ==========================================
-    // SHARPPAY V2: SECURITY SETTINGS ENGINE
-    // ==========================================
     public String updateSecuritySettings(String email, UserSettingsRequest request) {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("User not found!"));
 
-        // 1. Handle the PIN Update
         if (request.getTransactionPin() != null) {
             if (request.getTransactionPin().length() != 4 || !request.getTransactionPin().matches("\\d+")) {
                 throw new RuntimeException("Transaction PIN must be exactly 4 digits!");
             }
-            // Securely hash the PIN before saving
             user.setTransactionPin(passwordEncoder.encode(request.getTransactionPin()));
         }
 
-        // 2. Handle the Custom Liveness Limit Update
         if (request.getLivenessTransferLimit() != null) {
             if (request.getLivenessTransferLimit().compareTo(BigDecimal.ZERO) < 0) {
                 throw new RuntimeException("Transfer limit cannot be negative!");
