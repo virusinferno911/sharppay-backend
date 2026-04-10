@@ -1,5 +1,6 @@
 package com.virusinferno.sharppay.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -28,11 +29,13 @@ public class Transaction {
     // The account sending the money (Can be null for external deposits)
     @ManyToOne
     @JoinColumn(name = "sender_account_id")
+    @JsonIgnore
     private Account senderAccount;
 
     // The account receiving the money
     @ManyToOne
     @JoinColumn(name = "receiver_account_id")
+    @JsonIgnore
     private Account receiverAccount;
 
     @Column(nullable = false)

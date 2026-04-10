@@ -31,6 +31,13 @@ public class TransactionController {
         return ResponseEntity.ok(receipt);
     }
 
+    // This matches your frontend's api.get('/transactions') perfectly!
+    @GetMapping
+    public ResponseEntity<List<TransactionHistoryResponse>> getMyTransactions(Principal principal) {
+        List<TransactionHistoryResponse> history = transactionService.getMyTransactions(principal.getName());
+        return ResponseEntity.ok(history);
+    }
+
     @GetMapping("/history/{accountNumber}")
     public ResponseEntity<List<TransactionHistoryResponse>> getHistory(@PathVariable String accountNumber) {
         List<TransactionHistoryResponse> history = transactionService.getAccountHistory(accountNumber);

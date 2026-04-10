@@ -129,6 +129,17 @@ public class TransactionService {
         return "Transfer successful! You sent ₦" + request.getAmount() + " to " + receiver.getUser().getFullName() + ". Your new balance is ₦" + sender.getBalance();
     }
 
+    // New method that securely extracts the account from the JWT Token's email
+    public List<TransactionHistoryResponse> getMyTransactions(String email) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found!"));
+
+        Account account = accountRepository.findByUser(user)
+                .orElseThrow(() -> new RuntimeException("Account not found!"));
+
+        return getAccountHistory(account.getAccountNumber());
+    }
+
     public List<TransactionHistoryResponse> getAccountHistory(String accountNumber) {
         accountRepository.findByAccountNumber(accountNumber)
                 .orElseThrow(() -> new RuntimeException("Account not found!"));
