@@ -43,4 +43,32 @@ public class EmailService {
             System.out.println("Failed to send OTP Email: " + e.getMessage());
         }
     }
+
+    public void sendWelcomeEmail(String toEmail, String fullName) {
+        RestTemplate restTemplate = new RestTemplate();
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.setBearerAuth(resendApiKey);
+
+        String htmlBody = "<div style='font-family: Arial, sans-serif; text-align: center; padding: 20px;'>" +
+                "<h2 style='color: #e11d48;'>Welcome to SharpPay, " + fullName + "! 🚀</h2>" +
+                "<p>Your email has been successfully verified.</p>" +
+                "<p>You can now log in and complete your KYC to claim your <strong>₦50,000 Welcome Bonus!</strong></p>" +
+                "<p>Stay sharp, stay secure.</p></div>";
+
+        Map<String, Object> body = Map.of(
+                "from", "SharpPay <onboarding@virusinferno.xyz>",
+                "to", new String[]{toEmail},
+                "subject", "Welcome to SharpPay! 🎉",
+                "html", htmlBody
+        );
+
+        HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
+        try {
+            restTemplate.postForEntity("https://api.resend.com/emails", request, String.class);
+            System.out.println("Welcome Email sent successfully to " + toEmail);
+        } catch (Exception e) {
+            System.out.println("Failed to send Welcome Email: " + e.getMessage());
+        }
+    }
 }

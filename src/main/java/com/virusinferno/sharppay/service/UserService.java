@@ -67,6 +67,10 @@ public class UserService {
             user.setEmailVerified(true);
             user.setOtpCode(null); // Clear it for security
             userRepository.save(user);
+
+            // Trigger the welcome email asynchronously
+            emailService.sendWelcomeEmail(user.getEmail(), user.getFullName());
+
             return "Email verified successfully!";
         }
         throw new RuntimeException("Invalid OTP Code!");
