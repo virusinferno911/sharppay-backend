@@ -27,12 +27,18 @@ jobs:
 
       - name: Deploy to Contabo VPS
         uses: appleboy/ssh-action@v1.0.3
+        env:
+          # This grabs the secret you saved in GitHub Settings
+          NEON_DB_PASSWORD: ${{ secrets.NEON_DB_PASSWORD }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USERNAME }}
           password: ${{ secrets.VPS_PASSWORD }}
-          # If using an SSH key instead of a password, uncomment the line below and delete the password line above
-          # key: ${{ secrets.VPS_SSH_KEY }}
+          # This passes the environment variable into the SSH session
+          envs: NEON_DB_PASSWORD
           script: |
+            # Export it so the bash script can read it
+            export NEON_DB_PASSWORD=$NEON_DB_PASSWORD
+            
             chmod +x /root/sharppay/deploy_sharppay.sh
             /root/sharppay/deploy_sharppay.sh
