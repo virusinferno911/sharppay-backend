@@ -35,7 +35,9 @@ public class VirtualCard {
     @Column(nullable = false)
     private String cardPin; // Securely Hashed
 
-    private boolean isActive = true;
+    // --- PHASE 2: The New Status Field ---
+    @Column(nullable = false, length = 20)
+    private String status = "ACTIVE"; // ACTIVE, FROZEN, DISABLED
 
     private LocalDateTime createdAt = LocalDateTime.now();
 }

@@ -27,4 +27,26 @@ public class VirtualCardController {
         CardResponse response = virtualCardService.getMyCard(principal.getName());
         return ResponseEntity.ok(response);
     }
+
+    // =========================================
+    // PHASE 2: NEW CARD CONTROL ENDPOINTS
+    // =========================================
+
+    @PutMapping("/freeze")
+    public ResponseEntity<String> freezeCard(Principal principal) {
+        String receipt = virtualCardService.updateCardStatus(principal.getName(), "FROZEN");
+        return ResponseEntity.ok(receipt);
+    }
+
+    @PutMapping("/unfreeze")
+    public ResponseEntity<String> unfreezeCard(Principal principal) {
+        String receipt = virtualCardService.updateCardStatus(principal.getName(), "ACTIVE");
+        return ResponseEntity.ok(receipt);
+    }
+
+    @PutMapping("/disable")
+    public ResponseEntity<String> disableCard(Principal principal) {
+        String receipt = virtualCardService.updateCardStatus(principal.getName(), "DISABLED");
+        return ResponseEntity.ok(receipt);
+    }
 }

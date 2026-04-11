@@ -11,5 +11,7 @@ public class CardResponse {
     private String cvv;
     private String cardType;
     private String nameOnCard;
-    private boolean isActive;
+
+    // --- PHASE 2: The updated status field ---
+    private String status;
 }
