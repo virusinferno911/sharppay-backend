@@ -59,7 +59,7 @@ public class EmailService {
         Map<String, Object> body = Map.of(
                 "from", "SharpPay <onboarding@virusinferno.xyz>",
                 "to", new String[]{toEmail},
-                "subject", "Welcome to SharpPay! 🎉",
+                "subject", "You Are Welcome To SharpPay! 🎉",
                 "html", htmlBody
         );
 
