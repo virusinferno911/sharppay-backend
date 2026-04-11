@@ -3,6 +3,7 @@ package com.virusinferno.sharppay.controller;
 import com.virusinferno.sharppay.dto.DepositRequest;
 import com.virusinferno.sharppay.dto.TransactionHistoryResponse;
 import com.virusinferno.sharppay.dto.TransferRequest;
+import com.virusinferno.sharppay.model.Transaction;
 import com.virusinferno.sharppay.service.TransactionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -26,12 +27,10 @@ public class TransactionController {
 
     @PostMapping("/transfer")
     public ResponseEntity<String> transfer(@RequestBody TransferRequest request, Principal principal) {
-        // The Principal object hands over the email securely extracted from the Token!
         String receipt = transactionService.processTransfer(request, principal.getName());
         return ResponseEntity.ok(receipt);
     }
 
-    // This matches your frontend's api.get('/transactions') perfectly!
     @GetMapping
     public ResponseEntity<List<TransactionHistoryResponse>> getMyTransactions(Principal principal) {
         List<TransactionHistoryResponse> history = transactionService.getMyTransactions(principal.getName());
@@ -42,5 +41,14 @@ public class TransactionController {
     public ResponseEntity<List<TransactionHistoryResponse>> getHistory(@PathVariable String accountNumber) {
         List<TransactionHistoryResponse> history = transactionService.getAccountHistory(accountNumber);
         return ResponseEntity.ok(history);
+    }
+
+    // ==========================================
+    // PHASE 3: RECEIPT ENDPOINT
+    // ==========================================
+    @GetMapping("/{transactionId}/receipt")
+    public ResponseEntity<Transaction> getReceipt(@PathVariable String transactionId, Principal principal) {
+        Transaction receipt = transactionService.getTransactionReceipt(transactionId, principal.getName());
+        return ResponseEntity.ok(receipt);
     }
 }

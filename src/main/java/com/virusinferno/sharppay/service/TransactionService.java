@@ -129,7 +129,6 @@ public class TransactionService {
         return "Transfer successful! You sent ₦" + request.getAmount() + " to " + receiver.getUser().getFullName() + ". Your new balance is ₦" + sender.getBalance();
     }
 
-    // New method that securely extracts the account from the JWT Token's email
     public List<TransactionHistoryResponse> getMyTransactions(String email) {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("User not found!"));
@@ -157,5 +156,31 @@ public class TransactionService {
                 .date(tx.getCreatedAt())
                 .build()
         ).collect(Collectors.toList());
+    }
+
+    // ==========================================
+    // PHASE 3: FETCH SINGLE TRANSACTION RECEIPT
+    // ==========================================
+    public Transaction getTransactionReceipt(String transactionId, String email) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found!"));
+
+        Account account = accountRepository.findByUser(user)
+                .orElseThrow(() -> new RuntimeException("Account not found!"));
+
+        Transaction transaction = transactionRepository.findByTransactionId(transactionId)
+                .orElseThrow(() -> new RuntimeException("Transaction not found!"));
+
+        // Security Check: Are they the sender or the receiver?
+        boolean isSender = transaction.getSenderAccount() != null &&
+                transaction.getSenderAccount().getAccountNumber().equals(account.getAccountNumber());
+        boolean isReceiver = transaction.getReceiverAccount() != null &&
+                transaction.getReceiverAccount().getAccountNumber().equals(account.getAccountNumber());
+
+        if (!isSender && !isReceiver) {
+            throw new RuntimeException("Unauthorized: You do not have permission to view this receipt.");
+        }
+
+        return transaction;
     }
 }
