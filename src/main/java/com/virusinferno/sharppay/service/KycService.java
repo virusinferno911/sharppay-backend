@@ -58,23 +58,32 @@ public class KycService {
         }
 
         try {
-            // A. Anti-Duplication Check: Does this face already exist in our bank?
-            SdkBytes selfieBytes = SdkBytes.fromInputStream(liveSelfie.getInputStream());
-            SearchFacesByImageRequest searchReq = SearchFacesByImageRequest.builder()
-                    .collectionId(FACE_COLLECTION_ID)
-                    .image(Image.builder().bytes(selfieBytes).build())
-                    .faceMatchThreshold(90F) // 90% confidence
-                    .maxFaces(1)
-                    .build();
-
-            try {
-                SearchFacesByImageResponse searchRes = rekognitionClient.searchFacesByImage(searchReq);
-                if (!searchRes.faceMatches().isEmpty()) {
-                    throw new RuntimeException("KYC Rejected: An account with this facial identity already exists in our system.");
-                }
-            } catch (InvalidParameterException e) {
-                // If there are no faces in the collection yet, AWS throws this. We can ignore it for the first user.
-            }
+            /* * ==========================================
+             * DEV NOTE: ANTI-DUPLICATION BYPASS
+             * ==========================================
+             * This block checks AWS Rekognition to see if the user's face is already in our system.
+             * It is temporarily commented out so the main developer can repeatedly test the KYC
+             * flow using their own face without triggering the "Duplicate Face" fraud block.
+             * MUST BE UNCOMMENTED BEFORE DEPLOYING TO PRODUCTION.
+             * ==========================================
+             *
+             * SdkBytes selfieBytes = SdkBytes.fromInputStream(liveSelfie.getInputStream());
+             * SearchFacesByImageRequest searchReq = SearchFacesByImageRequest.builder()
+             * .collectionId(FACE_COLLECTION_ID)
+             * .image(Image.builder().bytes(selfieBytes).build())
+             * .faceMatchThreshold(90F) // 90% confidence
+             * .maxFaces(1)
+             * .build();
+             *
+             * try {
+             * SearchFacesByImageResponse searchRes = rekognitionClient.searchFacesByImage(searchReq);
+             * if (!searchRes.faceMatches().isEmpty()) {
+             * throw new RuntimeException("KYC Rejected: An account with this facial identity already exists in our system.");
+             * }
+             * } catch (InvalidParameterException e) {
+             * // Ignore for first user
+             * }
+             */
 
             // B. Upload all 3 documents to S3
             String idFrontKey = "kyc-docs/" + user.getId() + "/id_front_" + UUID.randomUUID() + ".jpg";
@@ -90,12 +99,18 @@ public class KycService {
 
             if (isMatch) {
                 // D. Index the verified face into our AWS Database to prevent future duplicates!
-                IndexFacesRequest indexReq = IndexFacesRequest.builder()
-                        .collectionId(FACE_COLLECTION_ID)
-                        .image(Image.builder().s3Object(S3Object.builder().bucket(bucketName).name(selfieKey).build()).build())
-                        .externalImageId(user.getId().toString().replace("-", "")) // Link face to this exact User ID
-                        .build();
-                rekognitionClient.indexFaces(indexReq);
+                // NOTE: Because we bypassed the duplicate check, AWS might throw a warning here if you are already indexed,
+                // but we will catch it so it doesn't crash your test!
+                try {
+                    IndexFacesRequest indexReq = IndexFacesRequest.builder()
+                            .collectionId(FACE_COLLECTION_ID)
+                            .image(Image.builder().s3Object(S3Object.builder().bucket(bucketName).name(selfieKey).build()).build())
+                            .externalImageId(user.getId().toString().replace("-", ""))
+                            .build();
+                    rekognitionClient.indexFaces(indexReq);
+                } catch (Exception e) {
+                    System.out.println("Dev Warning: Face already indexed in AWS, skipping indexing step for this test.");
+                }
 
                 // E. Save and Reward
                 user.setKycStatus("VERIFIED");
@@ -136,7 +151,6 @@ public class KycService {
         transactionRepository.save(bonusTx);
     }
 
-    // Keep your existing Liveness Transfer method here
     public String verifyLiveness(String email, MultipartFile freshSelfie) {
         User user = userRepository.findByEmail(email).orElseThrow();
         if (user.getSelfieS3Key() == null) throw new RuntimeException("Complete KYC first.");
