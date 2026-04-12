@@ -57,8 +57,6 @@ public class VirtualCardService {
         feeTx.setTransactionType("CARD_FEE");
         feeTx.setStatus("COMPLETED");
         feeTx.setDescription("Virtual Card Creation Fee");
-        // FIXED: Sets exact receiver name so Receipt Modal works flawlessly!
-        feeTx.setReceiverName("SharpPay Card Services");
         transactionRepository.save(feeTx);
 
         VirtualCard card = existingCard.isPresent() ? existingCard.get() : new VirtualCard();
@@ -71,7 +69,7 @@ public class VirtualCardService {
         if(request.getCardPin() != null) {
             card.setCardPin(passwordEncoder.encode(request.getCardPin()));
         } else {
-            card.setCardPin(passwordEncoder.encode("1234")); // fallback safe PIN
+            card.setCardPin(passwordEncoder.encode("1234"));
         }
 
         card.setStatus("ACTIVE");

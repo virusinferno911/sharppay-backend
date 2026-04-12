@@ -15,7 +15,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -120,7 +119,6 @@ public class TransactionService {
     public List<TransactionHistoryResponse> getAccountHistory(String accountNumber) {
         List<Transaction> transactions = transactionRepository
                 .findBySenderAccount_AccountNumberOrReceiverAccount_AccountNumberOrderByCreatedAtDesc(accountNumber, accountNumber);
-
         return transactions.stream().map(this::mapToDto).collect(Collectors.toList());
     }
 
@@ -153,7 +151,6 @@ public class TransactionService {
             rAcct = tx.getReceiverAccount().getAccountNumber();
         }
 
-        // Apply specific labels based on transaction type
         if ("CARD_FEE".equals(tx.getTransactionType())) {
             rName = "SharpPay Card Services";
             rAcct = "SharpPay";
