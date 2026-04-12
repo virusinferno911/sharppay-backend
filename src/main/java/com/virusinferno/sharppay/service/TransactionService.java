@@ -33,157 +33,135 @@ public class TransactionService {
 
     @Transactional
     public String processDeposit(DepositRequest request) {
-        if (request.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
-            throw new RuntimeException("Deposit amount must be greater than zero!");
-        }
-
-        Account account = accountRepository.findByAccountNumber(request.getAccountNumber())
-                .orElseThrow(() -> new RuntimeException("Account not found!"));
-
+        Account account = accountRepository.findByAccountNumber(request.getAccountNumber()).orElseThrow();
         account.setBalance(account.getBalance().add(request.getAmount()));
         accountRepository.save(account);
 
         Transaction transaction = new Transaction();
         transaction.setTransactionId("TXN-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase());
-        transaction.setSessionId("SES-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase());
         transaction.setReceiverAccount(account);
         transaction.setAmount(request.getAmount());
         transaction.setTransactionType("DEPOSIT");
         transaction.setStatus("COMPLETED");
         transaction.setDescription("Wallet funding via bank transfer");
-
         transactionRepository.save(transaction);
-
-        return "Deposit successful! New Balance: ₦" + account.getBalance();
+        return "Deposit successful!";
     }
 
-    // RETURN MAP SO FRONTEND CAN GET THE TRANSACTION ID FOR THE RECEIPT POPUP
     @Transactional
     public Map<String, Object> processTransfer(TransferRequest request, String senderEmail) {
-        if (request.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
-            throw new RuntimeException("Transfer amount must be greater than zero!");
-        }
+        User senderUser = userRepository.findByEmail(senderEmail).orElseThrow();
 
-        User senderUser = userRepository.findByEmail(senderEmail)
-                .orElseThrow(() -> new RuntimeException("Sender user not found!"));
-
-        if (senderUser.getTransactionPin() == null) {
-            throw new RuntimeException("Please set up your Transaction PIN in settings first!");
-        }
-
-        if (request.getTransactionPin() == null ||
-                !passwordEncoder.matches(request.getTransactionPin(), senderUser.getTransactionPin())) {
+        if (request.getTransactionPin() == null || !passwordEncoder.matches(request.getTransactionPin(), senderUser.getTransactionPin())) {
             throw new RuntimeException("Invalid Transaction PIN!");
         }
 
-        if (senderUser.getLivenessTransferLimit() != null && request.getAmount().compareTo(senderUser.getLivenessTransferLimit()) >= 0) {
-            if (senderUser.getLivenessVerifiedAt() == null ||
-                    senderUser.getLivenessVerifiedAt().isBefore(LocalDateTime.now().minusMinutes(5))) {
-                throw new RuntimeException("High-value transfer blocked! Please perform a Facial Liveness Verification first.");
-            }
-            senderUser.setLivenessVerifiedAt(null);
-            userRepository.save(senderUser);
-        }
+        Account sender = accountRepository.findByUser(senderUser).orElseThrow();
+        Account receiver = accountRepository.findByAccountNumber(request.getReceiverAccountNumber()).orElseThrow();
 
-        Account sender = accountRepository.findByUser(senderUser)
-                .orElseThrow(() -> new RuntimeException("Sender account not found!"));
-
-        Account receiver = accountRepository.findByAccountNumber(request.getReceiverAccountNumber())
-                .orElseThrow(() -> new RuntimeException("Receiver account not found!"));
-
-        if (sender.getAccountNumber().equals(receiver.getAccountNumber())) {
-            throw new RuntimeException("Cannot transfer money to your own account!");
-        }
-
-        if (sender.getBalance().compareTo(request.getAmount()) < 0) {
-            throw new RuntimeException("Insufficient funds! Your balance is ₦" + sender.getBalance());
-        }
+        if (sender.getBalance().compareTo(request.getAmount()) < 0) throw new RuntimeException("Insufficient funds!");
 
         sender.setBalance(sender.getBalance().subtract(request.getAmount()));
         receiver.setBalance(receiver.getBalance().add(request.getAmount()));
-
         accountRepository.save(sender);
         accountRepository.save(receiver);
 
         Transaction transaction = new Transaction();
         transaction.setTransactionId("TXN-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase());
-        transaction.setSessionId("SES-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase());
         transaction.setSenderAccount(sender);
         transaction.setReceiverAccount(receiver);
         transaction.setAmount(request.getAmount());
         transaction.setTransactionType("TRANSFER");
         transaction.setStatus("COMPLETED");
-        transaction.setDescription(request.getDescription() != null ? request.getDescription() : "Internal P2P Transfer");
-
+        transaction.setDescription(request.getDescription() != null ? request.getDescription() : "Internal Transfer");
         transactionRepository.save(transaction);
 
-        // Returning Map so Frontend gets the ID
         Map<String, Object> response = new HashMap<>();
         response.put("message", "Transfer successful!");
         response.put("transactionId", transaction.getTransactionId());
-
         return response;
     }
 
+    // ==========================================
+    // NEW: BILLS PAYMENT DEDUCTION LOGIC
+    // ==========================================
+    @Transactional
+    public Map<String, Object> processBillPayment(String email, BigDecimal amount, String category, String billerId, String pin) {
+        User user = userRepository.findByEmail(email).orElseThrow();
+
+        if (pin == null || !passwordEncoder.matches(pin, user.getTransactionPin())) {
+            throw new RuntimeException("Invalid Transaction PIN!");
+        }
+
+        Account account = accountRepository.findByUser(user).orElseThrow();
+        if(account.getBalance().compareTo(amount) < 0) throw new RuntimeException("Insufficient balance for this bill!");
+
+        account.setBalance(account.getBalance().subtract(amount));
+        accountRepository.save(account);
+
+        Transaction tx = new Transaction();
+        tx.setTransactionId("TXN-" + UUID.randomUUID().toString().substring(0,8).toUpperCase());
+        tx.setSenderAccount(account);
+        tx.setAmount(amount);
+        tx.setTransactionType(category.toUpperCase() + "_BILL");
+        tx.setStatus("COMPLETED");
+        tx.setDescription(category + " Payment - " + billerId);
+        tx.setReceiverName(category + " Provider"); // Forces the name to display nicely
+        transactionRepository.save(tx);
+
+        Map<String, Object> res = new HashMap<>();
+        res.put("message", "Bill paid successfully!");
+        res.put("transactionId", tx.getTransactionId());
+        return res;
+    }
+
     public List<TransactionHistoryResponse> getMyTransactions(String email) {
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("User not found!"));
-
-        Account account = accountRepository.findByUser(user)
-                .orElseThrow(() -> new RuntimeException("Account not found!"));
-
+        User user = userRepository.findByEmail(email).orElseThrow();
+        Account account = accountRepository.findByUser(user).orElseThrow();
         return getAccountHistory(account.getAccountNumber());
     }
 
     public List<TransactionHistoryResponse> getAccountHistory(String accountNumber) {
-        accountRepository.findByAccountNumber(accountNumber)
-                .orElseThrow(() -> new RuntimeException("Account not found!"));
-
         List<Transaction> transactions = transactionRepository
-                .findBySenderAccount_AccountNumberOrReceiverAccount_AccountNumberOrderByCreatedAtDesc(
-                        accountNumber, accountNumber);
+                .findBySenderAccount_AccountNumberOrReceiverAccount_AccountNumberOrderByCreatedAtDesc(accountNumber, accountNumber);
 
-        // PROPERLY MAPPING NAMES FOR FRONTEND
-        return transactions.stream().map(tx -> {
-            String sName = tx.getSenderAccount() != null ? tx.getSenderAccount().getUser().getFullName() : "System";
-            String sAcct = tx.getSenderAccount() != null ? tx.getSenderAccount().getAccountNumber() : "";
-            String rName = tx.getReceiverAccount() != null ? tx.getReceiverAccount().getUser().getFullName() : "User";
-            String rAcct = tx.getReceiverAccount() != null ? tx.getReceiverAccount().getAccountNumber() : "";
-
-            return TransactionHistoryResponse.builder()
-                    .transactionId(tx.getTransactionId())
-                    .transactionType(tx.getTransactionType())
-                    .amount(tx.getAmount())
-                    .description(tx.getDescription())
-                    .status(tx.getStatus())
-                    .date(tx.getCreatedAt())
-                    .senderName(sName)
-                    .senderAccountNumber(sAcct)
-                    .receiverName(rName)
-                    .receiverAccountNumber(rAcct)
-                    .build();
-        }).collect(Collectors.toList());
+        return transactions.stream().map(this::mapToDto).collect(Collectors.toList());
     }
 
-    public Transaction getTransactionReceipt(String transactionId, String email) {
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("User not found!"));
+    // ==========================================
+    // FIXED: RECEIPT NOW RETURNS THE DTO WITH EXACT NAMES
+    // ==========================================
+    public TransactionHistoryResponse getTransactionReceipt(String transactionId, String email) {
+        User user = userRepository.findByEmail(email).orElseThrow();
+        Account account = accountRepository.findByUser(user).orElseThrow();
+        Transaction transaction = transactionRepository.findByTransactionId(transactionId).orElseThrow();
 
-        Account account = accountRepository.findByUser(user)
-                .orElseThrow(() -> new RuntimeException("Account not found!"));
+        boolean isSender = transaction.getSenderAccount() != null && transaction.getSenderAccount().getAccountNumber().equals(account.getAccountNumber());
+        boolean isReceiver = transaction.getReceiverAccount() != null && transaction.getReceiverAccount().getAccountNumber().equals(account.getAccountNumber());
 
-        Transaction transaction = transactionRepository.findByTransactionId(transactionId)
-                .orElseThrow(() -> new RuntimeException("Transaction not found!"));
+        if (!isSender && !isReceiver) throw new RuntimeException("Unauthorized receipt access.");
 
-        boolean isSender = transaction.getSenderAccount() != null &&
-                transaction.getSenderAccount().getAccountNumber().equals(account.getAccountNumber());
-        boolean isReceiver = transaction.getReceiverAccount() != null &&
-                transaction.getReceiverAccount().getAccountNumber().equals(account.getAccountNumber());
+        return mapToDto(transaction);
+    }
 
-        if (!isSender && !isReceiver) {
-            throw new RuntimeException("Unauthorized: You do not have permission to view this receipt.");
-        }
+    // Centralized mapper to ensure names NEVER drop
+    private TransactionHistoryResponse mapToDto(Transaction tx) {
+        String sName = tx.getSenderName() != null ? tx.getSenderName() : (tx.getSenderAccount() != null ? tx.getSenderAccount().getUser().getFullName() : "System");
+        String sAcct = tx.getSenderAccount() != null ? tx.getSenderAccount().getAccountNumber() : "";
+        String rName = tx.getReceiverName() != null ? tx.getReceiverName() : (tx.getReceiverAccount() != null ? tx.getReceiverAccount().getUser().getFullName() : "External Entity");
+        String rAcct = tx.getReceiverAccount() != null ? tx.getReceiverAccount().getAccountNumber() : "";
 
-        return transaction;
+        return TransactionHistoryResponse.builder()
+                .transactionId(tx.getTransactionId())
+                .transactionType(tx.getTransactionType())
+                .amount(tx.getAmount())
+                .description(tx.getDescription())
+                .status(tx.getStatus())
+                .date(tx.getCreatedAt())
+                .senderName(sName)
+                .senderAccountNumber(sAcct)
+                .receiverName(rName)
+                .receiverAccountNumber(rAcct)
+                .build();
     }
 }

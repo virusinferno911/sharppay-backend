@@ -3,12 +3,12 @@ package com.virusinferno.sharppay.controller;
 import com.virusinferno.sharppay.dto.DepositRequest;
 import com.virusinferno.sharppay.dto.TransactionHistoryResponse;
 import com.virusinferno.sharppay.dto.TransferRequest;
-import com.virusinferno.sharppay.model.Transaction;
 import com.virusinferno.sharppay.service.TransactionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.security.Principal;
 import java.util.List;
 import java.util.Map;
@@ -22,32 +22,33 @@ public class TransactionController {
 
     @PostMapping("/deposit")
     public ResponseEntity<String> deposit(@RequestBody DepositRequest request) {
-        String receipt = transactionService.processDeposit(request);
-        return ResponseEntity.ok(receipt);
+        return ResponseEntity.ok(transactionService.processDeposit(request));
     }
 
-    // FIXED: Now returns Map<String, Object> so React gets the transactionId for the popup!
     @PostMapping("/transfer")
     public ResponseEntity<Map<String, Object>> transfer(@RequestBody TransferRequest request, Principal principal) {
-        Map<String, Object> receipt = transactionService.processTransfer(request, principal.getName());
+        return ResponseEntity.ok(transactionService.processTransfer(request, principal.getName()));
+    }
+
+    // ==========================================
+    // NEW: BILLS ENDPOINT
+    // ==========================================
+    @PostMapping("/bills")
+    public ResponseEntity<Map<String, Object>> payBill(@RequestBody Map<String, String> request, Principal principal) {
+        BigDecimal amount = new BigDecimal(request.get("amount"));
+        Map<String, Object> receipt = transactionService.processBillPayment(
+                principal.getName(), amount, request.get("category"), request.get("billerId"), request.get("pin"));
         return ResponseEntity.ok(receipt);
     }
 
     @GetMapping
     public ResponseEntity<List<TransactionHistoryResponse>> getMyTransactions(Principal principal) {
-        List<TransactionHistoryResponse> history = transactionService.getMyTransactions(principal.getName());
-        return ResponseEntity.ok(history);
+        return ResponseEntity.ok(transactionService.getMyTransactions(principal.getName()));
     }
 
-    @GetMapping("/history/{accountNumber}")
-    public ResponseEntity<List<TransactionHistoryResponse>> getHistory(@PathVariable String accountNumber) {
-        List<TransactionHistoryResponse> history = transactionService.getAccountHistory(accountNumber);
-        return ResponseEntity.ok(history);
-    }
-
+    // FIXED: Now returns TransactionHistoryResponse DTO!
     @GetMapping("/{transactionId}/receipt")
-    public ResponseEntity<Transaction> getReceipt(@PathVariable String transactionId, Principal principal) {
-        Transaction receipt = transactionService.getTransactionReceipt(transactionId, principal.getName());
-        return ResponseEntity.ok(receipt);
+    public ResponseEntity<TransactionHistoryResponse> getReceipt(@PathVariable String transactionId, Principal principal) {
+        return ResponseEntity.ok(transactionService.getTransactionReceipt(transactionId, principal.getName()));
     }
 }
