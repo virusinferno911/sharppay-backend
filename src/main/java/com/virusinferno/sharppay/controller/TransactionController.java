@@ -4,6 +4,7 @@ import com.virusinferno.sharppay.dto.BillPaymentRequest;
 import com.virusinferno.sharppay.dto.DepositRequest;
 import com.virusinferno.sharppay.dto.TransactionHistoryResponse;
 import com.virusinferno.sharppay.dto.TransferRequest;
+import com.virusinferno.sharppay.model.Transaction;
 import com.virusinferno.sharppay.service.TransactionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -30,17 +31,26 @@ public class TransactionController {
         return ResponseEntity.ok(transactionService.processTransfer(request, principal.getName()));
     }
 
-    // FIXED: Uses strict DTO so bills NEVER fail
+    // FIXED: Perfectly matches your BillPaymentRequest DTO!
     @PostMapping("/bills")
     public ResponseEntity<Map<String, Object>> payBill(@RequestBody BillPaymentRequest request, Principal principal) {
         Map<String, Object> receipt = transactionService.processBillPayment(
-                principal.getName(), request.getAmount(), request.getCategory(), request.getBillerId(), request.getPin());
+                principal.getName(),
+                request.getAmount(),
+                request.getBillType(),
+                request.getTargetNumber(),
+                request.getTransactionPin());
         return ResponseEntity.ok(receipt);
     }
 
     @GetMapping
     public ResponseEntity<List<TransactionHistoryResponse>> getMyTransactions(Principal principal) {
         return ResponseEntity.ok(transactionService.getMyTransactions(principal.getName()));
+    }
+
+    @GetMapping("/history/{accountNumber}")
+    public ResponseEntity<List<TransactionHistoryResponse>> getHistory(@PathVariable String accountNumber) {
+        return ResponseEntity.ok(transactionService.getAccountHistory(accountNumber));
     }
 
     @GetMapping("/{transactionId}/receipt")

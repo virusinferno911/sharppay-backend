@@ -73,7 +73,7 @@ public class TransactionService {
         transaction.setAmount(request.getAmount());
         transaction.setTransactionType("TRANSFER");
         transaction.setStatus("COMPLETED");
-        transaction.setDescription(request.getDescription() != null ? request.getDescription() : "Internal Transfer");
+        transaction.setDescription(request.getDescription() != null && !request.getDescription().isEmpty() ? request.getDescription() : "Internal Transfer");
         transactionRepository.save(transaction);
 
         Map<String, Object> response = new HashMap<>();
@@ -82,9 +82,6 @@ public class TransactionService {
         return response;
     }
 
-    // ==========================================
-    // NEW: BILLS PAYMENT DEDUCTION LOGIC
-    // ==========================================
     @Transactional
     public Map<String, Object> processBillPayment(String email, BigDecimal amount, String category, String billerId, String pin) {
         User user = userRepository.findByEmail(email).orElseThrow();
@@ -106,7 +103,6 @@ public class TransactionService {
         tx.setTransactionType(category.toUpperCase() + "_BILL");
         tx.setStatus("COMPLETED");
         tx.setDescription(category + " Payment - " + billerId);
-        tx.setReceiverName(category + " Provider"); // Forces the name to display nicely
         transactionRepository.save(tx);
 
         Map<String, Object> res = new HashMap<>();
@@ -128,9 +124,6 @@ public class TransactionService {
         return transactions.stream().map(this::mapToDto).collect(Collectors.toList());
     }
 
-    // ==========================================
-    // FIXED: RECEIPT NOW RETURNS THE DTO WITH EXACT NAMES
-    // ==========================================
     public TransactionHistoryResponse getTransactionReceipt(String transactionId, String email) {
         User user = userRepository.findByEmail(email).orElseThrow();
         Account account = accountRepository.findByUser(user).orElseThrow();
@@ -144,12 +137,33 @@ public class TransactionService {
         return mapToDto(transaction);
     }
 
-    // Centralized mapper to ensure names NEVER drop
     private TransactionHistoryResponse mapToDto(Transaction tx) {
-        String sName = tx.getSenderName() != null ? tx.getSenderName() : (tx.getSenderAccount() != null ? tx.getSenderAccount().getUser().getFullName() : "System");
-        String sAcct = tx.getSenderAccount() != null ? tx.getSenderAccount().getAccountNumber() : "";
-        String rName = tx.getReceiverName() != null ? tx.getReceiverName() : (tx.getReceiverAccount() != null ? tx.getReceiverAccount().getUser().getFullName() : "External Entity");
-        String rAcct = tx.getReceiverAccount() != null ? tx.getReceiverAccount().getAccountNumber() : "";
+        String sName = "System";
+        String sAcct = "";
+        String rName = "External Entity";
+        String rAcct = "";
+
+        if (tx.getSenderAccount() != null) {
+            sName = tx.getSenderAccount().getUser().getFullName();
+            sAcct = tx.getSenderAccount().getAccountNumber();
+        }
+
+        if (tx.getReceiverAccount() != null) {
+            rName = tx.getReceiverAccount().getUser().getFullName();
+            rAcct = tx.getReceiverAccount().getAccountNumber();
+        }
+
+        // Apply specific labels based on transaction type
+        if ("CARD_FEE".equals(tx.getTransactionType())) {
+            rName = "SharpPay Card Services";
+            rAcct = "SharpPay";
+        } else if (tx.getTransactionType() != null && tx.getTransactionType().endsWith("_BILL")) {
+            rName = tx.getTransactionType().replace("_BILL", " Provider");
+            rAcct = "Biller";
+        } else if ("DEPOSIT".equals(tx.getTransactionType())) {
+            sName = "Bank Deposit";
+            sAcct = "External Bank";
+        }
 
         return TransactionHistoryResponse.builder()
                 .transactionId(tx.getTransactionId())
