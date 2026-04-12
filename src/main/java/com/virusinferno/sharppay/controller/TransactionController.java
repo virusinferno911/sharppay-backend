@@ -1,5 +1,6 @@
 package com.virusinferno.sharppay.controller;
 
+import com.virusinferno.sharppay.dto.BillPaymentRequest;
 import com.virusinferno.sharppay.dto.DepositRequest;
 import com.virusinferno.sharppay.dto.TransactionHistoryResponse;
 import com.virusinferno.sharppay.dto.TransferRequest;
@@ -8,7 +9,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.math.BigDecimal;
 import java.security.Principal;
 import java.util.List;
 import java.util.Map;
@@ -30,14 +30,11 @@ public class TransactionController {
         return ResponseEntity.ok(transactionService.processTransfer(request, principal.getName()));
     }
 
-    // ==========================================
-    // NEW: BILLS ENDPOINT
-    // ==========================================
+    // FIXED: Uses strict DTO so bills NEVER fail
     @PostMapping("/bills")
-    public ResponseEntity<Map<String, Object>> payBill(@RequestBody Map<String, String> request, Principal principal) {
-        BigDecimal amount = new BigDecimal(request.get("amount"));
+    public ResponseEntity<Map<String, Object>> payBill(@RequestBody BillPaymentRequest request, Principal principal) {
         Map<String, Object> receipt = transactionService.processBillPayment(
-                principal.getName(), amount, request.get("category"), request.get("billerId"), request.get("pin"));
+                principal.getName(), request.getAmount(), request.getCategory(), request.getBillerId(), request.getPin());
         return ResponseEntity.ok(receipt);
     }
 
@@ -46,7 +43,6 @@ public class TransactionController {
         return ResponseEntity.ok(transactionService.getMyTransactions(principal.getName()));
     }
 
-    // FIXED: Now returns TransactionHistoryResponse DTO!
     @GetMapping("/{transactionId}/receipt")
     public ResponseEntity<TransactionHistoryResponse> getReceipt(@PathVariable String transactionId, Principal principal) {
         return ResponseEntity.ok(transactionService.getTransactionReceipt(transactionId, principal.getName()));
