@@ -51,6 +51,11 @@ public class TransactionService {
     public Map<String, Object> processTransfer(TransferRequest request, String senderEmail) {
         User senderUser = userRepository.findByEmail(senderEmail).orElseThrow();
 
+        // SAFETY NET: Prevents 400 crashes on new accounts!
+        if (senderUser.getTransactionPin() == null) {
+            throw new RuntimeException("Please set up your Transaction PIN in Settings first!");
+        }
+
         if (request.getTransactionPin() == null || !passwordEncoder.matches(request.getTransactionPin(), senderUser.getTransactionPin())) {
             throw new RuntimeException("Invalid Transaction PIN!");
         }
@@ -84,6 +89,11 @@ public class TransactionService {
     @Transactional
     public Map<String, Object> processBillPayment(String email, BigDecimal amount, String category, String billerId, String pin) {
         User user = userRepository.findByEmail(email).orElseThrow();
+
+        // SAFETY NET: Prevents 400 crashes on new accounts!
+        if (user.getTransactionPin() == null) {
+            throw new RuntimeException("Please set up your Transaction PIN in Settings first!");
+        }
 
         if (pin == null || !passwordEncoder.matches(pin, user.getTransactionPin())) {
             throw new RuntimeException("Invalid Transaction PIN!");
