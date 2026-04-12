@@ -106,6 +106,8 @@ public class UserService {
                 .kycStatus(user.getKycStatus())
                 .accountNumber(account.getAccountNumber())
                 .balance(account.getBalance())
+                // ADDED: Pass the Liveness Limit to the frontend!
+                .livenessTransferLimit(user.getLivenessTransferLimit() != null ? user.getLivenessTransferLimit() : new BigDecimal("50000.00"))
                 .build();
     }
 

@@ -13,4 +13,7 @@ public class UserProfileResponse {
     private String kycStatus;
     private String accountNumber;
     private BigDecimal balance;
+
+    // This is the only new line!
+    private BigDecimal livenessTransferLimit;
 }

@@ -14,4 +14,10 @@ public class TransactionHistoryResponse {
     private String description;
     private String status;
     private LocalDateTime date;
+
+    // NEW FIELDS FOR FRONTEND EXACT MAPPING
+    private String senderName;
+    private String senderAccountNumber;
+    private String receiverName;
+    private String receiverAccountNumber;
 }

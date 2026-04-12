@@ -16,7 +16,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -55,8 +57,9 @@ public class TransactionService {
         return "Deposit successful! New Balance: ₦" + account.getBalance();
     }
 
+    // RETURN MAP SO FRONTEND CAN GET THE TRANSACTION ID FOR THE RECEIPT POPUP
     @Transactional
-    public String processTransfer(TransferRequest request, String senderEmail) {
+    public Map<String, Object> processTransfer(TransferRequest request, String senderEmail) {
         if (request.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
             throw new RuntimeException("Transfer amount must be greater than zero!");
         }
@@ -64,9 +67,6 @@ public class TransactionService {
         User senderUser = userRepository.findByEmail(senderEmail)
                 .orElseThrow(() -> new RuntimeException("Sender user not found!"));
 
-        // ==========================================
-        // SECURITY CHECK 1: VERIFY TRANSACTION PIN
-        // ==========================================
         if (senderUser.getTransactionPin() == null) {
             throw new RuntimeException("Please set up your Transaction PIN in settings first!");
         }
@@ -76,18 +76,11 @@ public class TransactionService {
             throw new RuntimeException("Invalid Transaction PIN!");
         }
 
-        // ==========================================
-        // SECURITY CHECK 2: THE BIOMETRIC LIMIT TRIGGER
-        // ==========================================
         if (senderUser.getLivenessTransferLimit() != null && request.getAmount().compareTo(senderUser.getLivenessTransferLimit()) >= 0) {
-
-            // Did they verify their face in the last 5 minutes?
             if (senderUser.getLivenessVerifiedAt() == null ||
                     senderUser.getLivenessVerifiedAt().isBefore(LocalDateTime.now().minusMinutes(5))) {
                 throw new RuntimeException("High-value transfer blocked! Please perform a Facial Liveness Verification first.");
             }
-
-            // If they pass, lock the door behind them so they must verify again next time
             senderUser.setLivenessVerifiedAt(null);
             userRepository.save(senderUser);
         }
@@ -106,14 +99,12 @@ public class TransactionService {
             throw new RuntimeException("Insufficient funds! Your balance is ₦" + sender.getBalance());
         }
 
-        // Move the money
         sender.setBalance(sender.getBalance().subtract(request.getAmount()));
         receiver.setBalance(receiver.getBalance().add(request.getAmount()));
 
         accountRepository.save(sender);
         accountRepository.save(receiver);
 
-        // Generate the bank receipt
         Transaction transaction = new Transaction();
         transaction.setTransactionId("TXN-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase());
         transaction.setSessionId("SES-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase());
@@ -126,7 +117,12 @@ public class TransactionService {
 
         transactionRepository.save(transaction);
 
-        return "Transfer successful! You sent ₦" + request.getAmount() + " to " + receiver.getUser().getFullName() + ". Your new balance is ₦" + sender.getBalance();
+        // Returning Map so Frontend gets the ID
+        Map<String, Object> response = new HashMap<>();
+        response.put("message", "Transfer successful!");
+        response.put("transactionId", transaction.getTransactionId());
+
+        return response;
     }
 
     public List<TransactionHistoryResponse> getMyTransactions(String email) {
@@ -147,20 +143,28 @@ public class TransactionService {
                 .findBySenderAccount_AccountNumberOrReceiverAccount_AccountNumberOrderByCreatedAtDesc(
                         accountNumber, accountNumber);
 
-        return transactions.stream().map(tx -> TransactionHistoryResponse.builder()
-                .transactionId(tx.getTransactionId())
-                .transactionType(tx.getTransactionType())
-                .amount(tx.getAmount())
-                .description(tx.getDescription())
-                .status(tx.getStatus())
-                .date(tx.getCreatedAt())
-                .build()
-        ).collect(Collectors.toList());
+        // PROPERLY MAPPING NAMES FOR FRONTEND
+        return transactions.stream().map(tx -> {
+            String sName = tx.getSenderAccount() != null ? tx.getSenderAccount().getUser().getFullName() : "System";
+            String sAcct = tx.getSenderAccount() != null ? tx.getSenderAccount().getAccountNumber() : "";
+            String rName = tx.getReceiverAccount() != null ? tx.getReceiverAccount().getUser().getFullName() : "User";
+            String rAcct = tx.getReceiverAccount() != null ? tx.getReceiverAccount().getAccountNumber() : "";
+
+            return TransactionHistoryResponse.builder()
+                    .transactionId(tx.getTransactionId())
+                    .transactionType(tx.getTransactionType())
+                    .amount(tx.getAmount())
+                    .description(tx.getDescription())
+                    .status(tx.getStatus())
+                    .date(tx.getCreatedAt())
+                    .senderName(sName)
+                    .senderAccountNumber(sAcct)
+                    .receiverName(rName)
+                    .receiverAccountNumber(rAcct)
+                    .build();
+        }).collect(Collectors.toList());
     }
 
-    // ==========================================
-    // PHASE 3: FETCH SINGLE TRANSACTION RECEIPT
-    // ==========================================
     public Transaction getTransactionReceipt(String transactionId, String email) {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("User not found!"));
@@ -171,7 +175,6 @@ public class TransactionService {
         Transaction transaction = transactionRepository.findByTransactionId(transactionId)
                 .orElseThrow(() -> new RuntimeException("Transaction not found!"));
 
-        // Security Check: Are they the sender or the receiver?
         boolean isSender = transaction.getSenderAccount() != null &&
                 transaction.getSenderAccount().getAccountNumber().equals(account.getAccountNumber());
         boolean isReceiver = transaction.getReceiverAccount() != null &&

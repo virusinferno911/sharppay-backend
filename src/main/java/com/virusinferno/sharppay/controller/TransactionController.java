@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.security.Principal;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/transactions")
@@ -25,9 +26,10 @@ public class TransactionController {
         return ResponseEntity.ok(receipt);
     }
 
+    // FIXED: Now returns Map<String, Object> so React gets the transactionId for the popup!
     @PostMapping("/transfer")
-    public ResponseEntity<String> transfer(@RequestBody TransferRequest request, Principal principal) {
-        String receipt = transactionService.processTransfer(request, principal.getName());
+    public ResponseEntity<Map<String, Object>> transfer(@RequestBody TransferRequest request, Principal principal) {
+        Map<String, Object> receipt = transactionService.processTransfer(request, principal.getName());
         return ResponseEntity.ok(receipt);
     }
 
@@ -43,9 +45,6 @@ public class TransactionController {
         return ResponseEntity.ok(history);
     }
 
-    // ==========================================
-    // PHASE 3: RECEIPT ENDPOINT
-    // ==========================================
     @GetMapping("/{transactionId}/receipt")
     public ResponseEntity<Transaction> getReceipt(@PathVariable String transactionId, Principal principal) {
         Transaction receipt = transactionService.getTransactionReceipt(transactionId, principal.getName());
