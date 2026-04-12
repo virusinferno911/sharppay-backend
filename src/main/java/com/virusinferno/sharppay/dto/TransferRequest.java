@@ -9,6 +9,9 @@ public class TransferRequest {
     private BigDecimal amount;
     private String description;
 
-    // NEW: The user must provide their PIN to move money
+    // The user must provide their PIN to move money
     private String transactionPin;
+
+    // NEW: Added to prevent 400 Bad Request when React sends external bank info
+    private String bankCode;
 }
