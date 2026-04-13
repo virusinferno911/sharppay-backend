@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Random;
 
@@ -41,7 +42,6 @@ public class UserService {
         newUser.setPhoneNumber(request.getPhoneNumber());
         newUser.setPasswordHash(passwordEncoder.encode(request.getPassword()));
 
-        // Generate 6-digit OTP
         String generatedOtp = String.format("%06d", new Random().nextInt(999999));
         newUser.setOtpCode(generatedOtp);
         newUser.setEmailVerified(false);
@@ -53,37 +53,29 @@ public class UserService {
         newAccount.setAccountNumber(generateUniqueAccountNumber());
         accountRepository.save(newAccount);
 
-        // Fire the email asynchronously
         emailService.sendOtpEmail(savedUser.getEmail(), generatedOtp);
-
         return savedUser;
     }
 
     public String verifyOtp(String email, String otpCode) {
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("User not found!"));
+        User user = userRepository.findByEmail(email).orElseThrow(() -> new RuntimeException("User not found!"));
 
         if (user.getOtpCode() != null && user.getOtpCode().equals(otpCode)) {
             user.setEmailVerified(true);
-            user.setOtpCode(null); // Clear it for security
+            user.setOtpCode(null);
             userRepository.save(user);
-
-            // Trigger the welcome email asynchronously
             emailService.sendWelcomeEmail(user.getEmail(), user.getFullName());
-
             return "Email verified successfully!";
         }
         throw new RuntimeException("Invalid OTP Code!");
     }
 
     public LoginResponse loginUser(LoginRequest request) {
-        User user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new RuntimeException("Invalid email or password!"));
+        User user = userRepository.findByEmail(request.getEmail()).orElseThrow(() -> new RuntimeException("Invalid email or password!"));
 
         if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
             throw new RuntimeException("Invalid email or password!");
         }
-
         if (!user.isEmailVerified()) {
             throw new RuntimeException("Please verify your email via OTP before logging in.");
         }
@@ -93,11 +85,8 @@ public class UserService {
     }
 
     public UserProfileResponse getUserProfile(String email) {
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("User not found!"));
-
-        Account account = accountRepository.findByUser(user)
-                .orElseThrow(() -> new RuntimeException("Account not found for this user!"));
+        User user = userRepository.findByEmail(email).orElseThrow(() -> new RuntimeException("User not found!"));
+        Account account = accountRepository.findByUser(user).orElseThrow(() -> new RuntimeException("Account not found for this user!"));
 
         return UserProfileResponse.builder()
                 .fullName(user.getFullName())
@@ -106,16 +95,16 @@ public class UserService {
                 .kycStatus(user.getKycStatus())
                 .accountNumber(account.getAccountNumber())
                 .balance(account.getBalance())
-                // ADDED: Pass the Liveness Limit to the frontend!
                 .livenessTransferLimit(user.getLivenessTransferLimit() != null ? user.getLivenessTransferLimit() : new BigDecimal("50000.00"))
+                .hasTransactionPin(user.getTransactionPin() != null && !user.getTransactionPin().isEmpty())
                 .build();
     }
 
     public String updateSecuritySettings(String email, UserSettingsRequest request) {
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("User not found!"));
+        User user = userRepository.findByEmail(email).orElseThrow(() -> new RuntimeException("User not found!"));
 
-        if (request.getTransactionPin() != null) {
+        // RESTORED: This is the block I accidentally removed that actually saves the PIN!
+        if (request.getTransactionPin() != null && !request.getTransactionPin().isEmpty()) {
             if (request.getTransactionPin().length() != 4 || !request.getTransactionPin().matches("\\d+")) {
                 throw new RuntimeException("Transaction PIN must be exactly 4 digits!");
             }
@@ -123,14 +112,78 @@ public class UserService {
         }
 
         if (request.getLivenessTransferLimit() != null) {
-            if (request.getLivenessTransferLimit().compareTo(BigDecimal.ZERO) < 0) {
-                throw new RuntimeException("Transfer limit cannot be negative!");
-            }
+            if (request.getLivenessTransferLimit().compareTo(BigDecimal.ZERO) < 0) throw new RuntimeException("Transfer limit cannot be negative!");
             user.setLivenessTransferLimit(request.getLivenessTransferLimit());
         }
-
         userRepository.save(user);
         return "Security settings updated successfully!";
+    }
+
+    // ==========================================
+    // RECOVERY & CHANGE LOGIC
+    // ==========================================
+
+    @Transactional
+    public void changePin(String email, Map<String, String> request) {
+        User user = userRepository.findByEmail(email).orElseThrow(() -> new RuntimeException("User not found!"));
+
+        String oldPin = request.get("oldPin");
+        String newPin = request.get("newPin");
+
+        if (newPin == null || newPin.length() != 4) throw new RuntimeException("New PIN must be 4 digits!");
+
+        // If user already has a PIN, strictly verify the old one
+        if (user.getTransactionPin() != null) {
+            if (oldPin == null || !passwordEncoder.matches(oldPin, user.getTransactionPin())) {
+                throw new RuntimeException("Incorrect Old PIN!");
+            }
+        }
+
+        user.setTransactionPin(passwordEncoder.encode(newPin));
+        userRepository.save(user);
+    }
+
+    @Transactional
+    public void forgotPassword(String email) {
+        User user = userRepository.findByEmail(email).orElseThrow(() -> new RuntimeException("Account with this email does not exist."));
+        String otp = String.format("%06d", new Random().nextInt(999999));
+        user.setOtpCode(otp);
+        userRepository.save(user);
+        emailService.sendOtpEmail(email, otp);
+    }
+
+    @Transactional
+    public void resetPassword(Map<String, String> request) {
+        User user = userRepository.findByEmail(request.get("email")).orElseThrow(() -> new RuntimeException("User not found"));
+        if (user.getOtpCode() == null || !user.getOtpCode().equals(request.get("otpCode"))) {
+            throw new RuntimeException("Invalid or Expired OTP!");
+        }
+        user.setPasswordHash(passwordEncoder.encode(request.get("newPassword")));
+        user.setOtpCode(null);
+        userRepository.save(user);
+    }
+
+    @Transactional
+    public void forgotPin(String email) {
+        User user = userRepository.findByEmail(email).orElseThrow(() -> new RuntimeException("User not found"));
+        String otp = String.format("%06d", new Random().nextInt(999999));
+        user.setOtpCode(otp);
+        userRepository.save(user);
+        emailService.sendOtpEmail(email, otp);
+    }
+
+    @Transactional
+    public void resetPin(String email, Map<String, String> request) {
+        User user = userRepository.findByEmail(email).orElseThrow(() -> new RuntimeException("User not found"));
+        if (user.getOtpCode() == null || !user.getOtpCode().equals(request.get("otpCode"))) {
+            throw new RuntimeException("Invalid or Expired OTP!");
+        }
+        if (request.get("newPin") == null || request.get("newPin").length() != 4) {
+            throw new RuntimeException("New PIN must be 4 digits!");
+        }
+        user.setTransactionPin(passwordEncoder.encode(request.get("newPin")));
+        user.setOtpCode(null);
+        userRepository.save(user);
     }
 
     private String generateUniqueAccountNumber() {
@@ -140,7 +193,6 @@ public class UserService {
             long number = 8000000000L + (long)(random.nextDouble() * 1000000000L);
             accountNumber = String.valueOf(number);
         } while (accountRepository.findByAccountNumber(accountNumber).isPresent());
-
         return accountNumber;
     }
 }

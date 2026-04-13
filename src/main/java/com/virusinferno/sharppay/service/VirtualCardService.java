@@ -52,6 +52,8 @@ public class VirtualCardService {
 
         Transaction feeTx = new Transaction();
         feeTx.setTransactionId("TXN-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase());
+        // FIXED: Substring to 30 chars to prevent Database crash!
+        feeTx.setSessionId(UUID.randomUUID().toString().replace("-", "").substring(0, 30));
         feeTx.setSenderAccount(account);
         feeTx.setAmount(cardFee);
         feeTx.setTransactionType("CARD_FEE");

@@ -28,25 +28,55 @@ public class UserController {
 
     @PostMapping("/verify-otp")
     public ResponseEntity<String> verifyOtp(@RequestBody Map<String, String> request) {
-        String result = userService.verifyOtp(request.get("email"), request.get("otpCode"));
-        return ResponseEntity.ok(result);
+        return ResponseEntity.ok(userService.verifyOtp(request.get("email"), request.get("otpCode")));
     }
 
     @PostMapping("/login")
     public ResponseEntity<LoginResponse> login(@RequestBody LoginRequest request) {
-        LoginResponse response = userService.loginUser(request);
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(userService.loginUser(request));
     }
 
     @GetMapping("/me")
     public ResponseEntity<UserProfileResponse> getMyProfile(Principal principal) {
-        UserProfileResponse profile = userService.getUserProfile(principal.getName());
-        return ResponseEntity.ok(profile);
+        return ResponseEntity.ok(userService.getUserProfile(principal.getName()));
     }
 
     @PostMapping("/settings")
     public ResponseEntity<String> updateSettings(@RequestBody UserSettingsRequest request, Principal principal) {
-        String result = userService.updateSecuritySettings(principal.getName(), request);
-        return ResponseEntity.ok(result);
+        return ResponseEntity.ok(userService.updateSecuritySettings(principal.getName(), request));
+    }
+
+    // ==========================================
+    // NEW: ADVANCED PIN & PASSWORD RECOVERY
+    // ==========================================
+
+    @PostMapping("/change-pin")
+    public ResponseEntity<String> changePin(@RequestBody Map<String, String> request, Principal principal) {
+        userService.changePin(principal.getName(), request);
+        return ResponseEntity.ok("Transaction PIN updated securely!");
+    }
+
+    @PostMapping("/forgot-password")
+    public ResponseEntity<String> forgotPassword(@RequestBody Map<String, String> request) {
+        userService.forgotPassword(request.get("email"));
+        return ResponseEntity.ok("OTP sent to your email.");
+    }
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<String> resetPassword(@RequestBody Map<String, String> request) {
+        userService.resetPassword(request);
+        return ResponseEntity.ok("Password has been reset successfully!");
+    }
+
+    @PostMapping("/forgot-pin")
+    public ResponseEntity<String> forgotPin(Principal principal) {
+        userService.forgotPin(principal.getName());
+        return ResponseEntity.ok("OTP sent to your email to reset PIN.");
+    }
+
+    @PostMapping("/reset-pin")
+    public ResponseEntity<String> resetPin(@RequestBody Map<String, String> request, Principal principal) {
+        userService.resetPin(principal.getName(), request);
+        return ResponseEntity.ok("Transaction PIN has been reset successfully!");
     }
 }

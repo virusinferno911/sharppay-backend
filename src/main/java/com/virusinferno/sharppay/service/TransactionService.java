@@ -38,6 +38,8 @@ public class TransactionService {
 
         Transaction transaction = new Transaction();
         transaction.setTransactionId("TXN-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase());
+        // FIXED: Substring to 30 chars to prevent Database crash!
+        transaction.setSessionId(UUID.randomUUID().toString().replace("-", "").substring(0, 30));
         transaction.setReceiverAccount(account);
         transaction.setAmount(request.getAmount());
         transaction.setTransactionType("DEPOSIT");
@@ -51,7 +53,6 @@ public class TransactionService {
     public Map<String, Object> processTransfer(TransferRequest request, String senderEmail) {
         User senderUser = userRepository.findByEmail(senderEmail).orElseThrow();
 
-        // SAFETY NET: Prevents 400 crashes on new accounts!
         if (senderUser.getTransactionPin() == null) {
             throw new RuntimeException("Please set up your Transaction PIN in Settings first!");
         }
@@ -72,6 +73,8 @@ public class TransactionService {
 
         Transaction transaction = new Transaction();
         transaction.setTransactionId("TXN-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase());
+        // FIXED: Substring to 30 chars to prevent Database crash!
+        transaction.setSessionId(UUID.randomUUID().toString().replace("-", "").substring(0, 30));
         transaction.setSenderAccount(sender);
         transaction.setReceiverAccount(receiver);
         transaction.setAmount(request.getAmount());
@@ -90,7 +93,6 @@ public class TransactionService {
     public Map<String, Object> processBillPayment(String email, BigDecimal amount, String category, String billerId, String pin) {
         User user = userRepository.findByEmail(email).orElseThrow();
 
-        // SAFETY NET: Prevents 400 crashes on new accounts!
         if (user.getTransactionPin() == null) {
             throw new RuntimeException("Please set up your Transaction PIN in Settings first!");
         }
@@ -107,6 +109,8 @@ public class TransactionService {
 
         Transaction tx = new Transaction();
         tx.setTransactionId("TXN-" + UUID.randomUUID().toString().substring(0,8).toUpperCase());
+        // FIXED: Substring to 30 chars to prevent Database crash!
+        tx.setSessionId(UUID.randomUUID().toString().replace("-", "").substring(0, 30));
         tx.setSenderAccount(account);
         tx.setAmount(amount);
         tx.setTransactionType(category.toUpperCase() + "_BILL");

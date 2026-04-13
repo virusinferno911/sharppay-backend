@@ -13,7 +13,8 @@ public class UserProfileResponse {
     private String kycStatus;
     private String accountNumber;
     private BigDecimal balance;
-
-    // This is the only new line!
     private BigDecimal livenessTransferLimit;
+
+    // NEW: Tells the frontend if the user needs to SET a pin or CHANGE a pin
+    private boolean hasTransactionPin;
 }
